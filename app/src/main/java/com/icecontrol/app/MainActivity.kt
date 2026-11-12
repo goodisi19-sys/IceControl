@@ -21,6 +21,9 @@ class MainActivity : Activity() {
     private lateinit var logView: TextView
     private val handler = Handler(Looper.getMainLooper())
     private val found = linkedMapOf<String, BluetoothDevice>()
+    private val deviceNames = linkedMapOf<String, String>()
+    private val deviceRssi = linkedMapOf<String, Int>()
+    private val deviceButtons = linkedMapOf<String, Button>()
     private val logs = StringBuilder()
     private var gatt: BluetoothGatt? = null
     private var scanning = false
@@ -93,7 +96,7 @@ class MainActivity : Activity() {
         if(!permitted()){requestBtPermissions();return}
         if(!adapter.isEnabled){setStatus("Включи Bluetooth");return}
         try {
-            found.clear(); devicesBox.removeAllViews(); scanning=true
+            found.clear(); deviceNames.clear(); deviceRssi.clear(); deviceButtons.clear(); devicesBox.removeAllViews(); scanning=true
             setStatus("Поиск BLE-устройств (12 секунд)")
             adapter.bluetoothLeScanner.startScan(scanCallback)
             handler.postDelayed({ if(scanning) stopScan("Поиск завершён; найдено: ${found.size}") },12000)
@@ -105,18 +108,39 @@ class MainActivity : Activity() {
     }
     private val scanCallback=object:ScanCallback(){
         override fun onScanResult(type:Int,result:ScanResult) {
-            val d=result.device; val address=try{d.address}catch(_:Exception){"unknown"}
-            if(found.containsKey(address))return
+            val d=result.device
+            val address=try{d.address}catch(_:Exception){"unknown"}
+            val name=try{d.name?:result.scanRecord?.deviceName?:"Без имени"}catch(_:Exception){"Без имени"}
+            val firstSeen=!found.containsKey(address)
             found[address]=d
-            val name=try{d.name?:result.scanRecord?.deviceName?:"Без имени"}catch(_:Exception){"BLE"}
-            log("Найдено устройство: $name, адрес скрыт, RSSI ${result.rssi} dBm")
-            runOnUiThread { devicesBox.addView(Button(this@MainActivity).apply {
-                text="$name • RSSI ${result.rssi} dBm";gravity=Gravity.START
-                setOnClickListener{connect(d,name)}
-            }) }
+            deviceNames[address]=name
+            deviceRssi[address]=result.rssi
+            if(firstSeen) log("Найдено BLE-устройство: $name; адрес=$address; RSSI ${result.rssi} dBm")
+            runOnUiThread { renderFoundDevices() }
         }
         override fun onScanFailed(code:Int){scanning=false;log("Ошибка BLE scan, code=$code");setStatus("Ошибка сканирования: $code")}
     }
+    // Показываем стабильный локальный BLE-адрес и обновляем RSSI при каждом рекламном пакете.
+    // Сильнейший сигнал располагается сверху; адрес нужен только для сравнения устройств на телефоне.
+    private fun renderFoundDevices() {
+        val sorted = found.keys.sortedByDescending { deviceRssi[it] ?: -127 }
+        devicesBox.removeAllViews()
+        sorted.forEach { address ->
+            val d = found[address] ?: return@forEach
+            val name = deviceNames[address] ?: "Без имени"
+            val rssi = deviceRssi[address] ?: -127
+            val button = deviceButtons.getOrPut(address) {
+                Button(this).apply {
+                    gravity = Gravity.START
+                    setOnClickListener { connect(d, name) }
+                }
+            }
+            button.text = "$name\\nАдрес: $address\\nRSSI: $rssi dBm"
+            button.setOnClickListener { connect(d, name) }
+            devicesBox.addView(button)
+        }
+    }
+
     private fun connect(d:BluetoothDevice,name:String) {
         if(!permitted()){requestBtPermissions();return}
         try {
