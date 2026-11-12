@@ -135,7 +135,7 @@ class MainActivity : Activity() {
                     setOnClickListener { connect(d, name) }
                 }
             }
-            button.text = "$name\\nАдрес: $address\\nRSSI: $rssi dBm"
+            button.text = "$name\nАдрес: $address\nRSSI: $rssi dBm"
             button.setOnClickListener { connect(d, name) }
             devicesBox.addView(button)
         }
